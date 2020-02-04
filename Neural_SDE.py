@@ -317,9 +317,9 @@ def train_models(seedused):
         n_steps=48
 
     # fix the seeds for reproducibility
-        np.random.seed(epoch)
+        np.random.seed(epoch+seedused*1000)
         z_1 = np.random.normal(size=(MC_samples_gen, n_steps))
-        np.random.seed(epoch)
+        np.random.seed(epoch+seedused*1000)
         z_2 = np.random.normal(size=(MC_samples_gen, n_steps))
 
 
@@ -376,7 +376,7 @@ losses=[]
 losses_val=[]
 strikes_put=[55,60, 65,70,75,80,85,90,95,100]
 strikes_call=[100,105,110,115,120,125,130,135, 140,145]
-seedsused=np.zeros((100,1))
+seedsused=np.zeros((101,1))
 seedsused[0,0]=-1
 S0 = torch.ones(1, 1)*100
 BS_vol=torch.ones(1,1)*0.2
