@@ -11,8 +11,8 @@ from random import randrange
 if torch.cuda.is_available():
     device = 'cuda'
     # Uncomment below to pick particular device if running on a cluster:
-    torch.cuda.set_device(4) 
-    device='cuda:4'
+    torch.cuda.set_device(3) 
+    device='cuda:3'
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
     device=torch.cuda.current_device()
 
@@ -128,7 +128,6 @@ class Net_SDE(nn.Module):
                 Z_new=torch.Tensor()
                 Z_newP_ITM = torch.Tensor()
                 Z_newP_OTM = torch.Tensor()
-                Z_new2=torch.Tensor()
                 countstrikecall=-1
                 
             # Evaluate put (OTM) and call (OTM) option prices 
@@ -142,32 +141,51 @@ class Net_SDE(nn.Module):
 
                     # Since we use the same number of maturities for vanilla calls and puts: 
                     
-                    price = torch.cat([S_old-K_extended,zeros],1) #call ITM
-                    price_OTM = torch.cat([K_extended_put-S_old,zeros],1) #put ITM
+                    price = torch.cat([S_old-K_extended,zeros],1) #call OTM
+                    price_OTM = torch.cat([K_extended_put-S_old,zeros],1) #put OTM
                     
                     # Discounting assumes we use 2-year time horizon 
                     
                     price = torch.max(price, 1, keepdim=True)[0]*torch.exp(-rate*1*i/n_steps)
-                    price_OTM = torch.max(price_OTM, 1, keepdim=True)[0]*torch.exp(-rate*1*i/n_steps)             
+                    price_OTM = torch.max(price_OTM, 1, keepdim=True)[0]*torch.exp(-rate*1*i/n_steps)               
                     Z_new= torch.cat([Z_new,price],1)  
-                    Z_newP_OTM= torch.cat([Z_newP_OTM,price_OTM],1)
-                    price2 = price_OTM+S0-strike_put*torch.exp(-rate*1*i/n_steps)  
-                    price_ITM = price-S0+strike*torch.exp(-rate*1*i/n_steps)  
-                    Z_new2= torch.cat([Z_new2,price2],1) 
-                    Z_newP_ITM= torch.cat([Z_newP_ITM,price_ITM],1)    
-                  
+                    Z_newP_OTM= torch.cat([Z_newP_OTM,price_OTM],1)  
+                    
                # MC step:
             
                 avg_S = torch.cat([p.mean().view(1,1) for p in Z_new.T], 0)
                 avg_SSP_OTM = torch.cat([p.mean().view(1,1) for p in Z_newP_OTM.T], 0)
                 average_SS = torch.cat([average_SS,avg_S.T],0) #call OTM
-                average_SS_OTM = torch.cat([average_SS_OTM,avg_SSP_OTM.T],0) #put OTM    
-                avg_S2 = torch.cat([p.mean().view(1,1) for p in Z_new2.T], 0)
+                average_SS_OTM = torch.cat([average_SS_OTM,avg_SSP_OTM.T],0) #put OTM       
+                countstrikeput=-1
+                
+          # Evaluate put (ITM) and call (ITM) option prices 
+                
+                Z_new=torch.Tensor()
+                for strike in K_put:
+                    countstrikeput+=1
+                    strike = torch.ones(1,1)*strike
+                    strike_call = torch.ones(1,1)*K_call[countstrikeput]
+                    K_extended = torch.repeat_interleave(strike, MC_samples, dim=0).float()
+                    K_extended_call = torch.repeat_interleave(strike_call, MC_samples, dim=0).float()
+                    price_ITM = torch.cat([K_extended_call-S_old,zeros],1) #put ITM
+                    price = torch.cat([S_old-K_extended,zeros],1) #Call ITM
+                    price = torch.max(price, 1, keepdim=True)[0]*torch.exp(-rate*1*i/n_steps)
+                    price_ITM = torch.max(price_ITM, 1, keepdim=True)[0]*torch.exp(-rate*1*i/n_steps)
+                                    
+            # Comment out Z_new and Z_newP_ITM if using CV with Black-Scholes 
+                    
+                    Z_new= torch.cat([Z_new,price],1) 
+                    Z_newP_ITM= torch.cat([Z_newP_ITM,price_ITM],1)    
+                    
+            # MC step         
+                    
+                avg_S = torch.cat([p.mean().view(1,1) for p in Z_new.T], 0)
                 avg_SSP_ITM = torch.cat([p.mean().view(1,1) for p in Z_newP_ITM.T], 0)
                 average_SS1_ITM = torch.cat([average_SS1_ITM,avg_SSP_ITM.T],0)                            
-                average_SS1 = torch.cat([average_SS1,avg_S2.T],0)       
+                average_SS1 = torch.cat([average_SS1,avg_S.T],0)      
                     
-            # Return model vanilla option prices    
+            # Return model implied vanilla option prices    
                 
         return torch.cat([average_SS,average_SS_OTM,average_SS1,average_SS1_ITM  ],0)  
     
@@ -189,6 +207,8 @@ def train_models(seedused):
     for epoch in range(n_epochs):
         MC_samples_gen=200000
         n_steps=360
+        path = "Neural_SDE_42"+".pth"
+        torch.save(model.state_dict(), path)
         if epoch==250:
              optimizer = torch.optim.Adam(model.parameters(),lr=0.0001, eps=1e-08,amsgrad=False,betas=(0.9, 0.999), weight_decay=0 )
 
@@ -204,7 +224,7 @@ def train_models(seedused):
         if loss_val < loss_val_best:
              loss_val_best=loss_val
              print('loss_val_best', loss_val_best)
-             path = "Neural_SDE_48"+".pth"
+             path = "Neural_SDE_49"+".pth"
              torch.save(model.state_dict(), path)
 
 #store the erorr value
@@ -269,11 +289,11 @@ z_1 = torch.tensor(z_1).to(device=device).float()
 z_2 = torch.tensor(z_2).to(device=device).float()
 
 for i in range(2,102):
-    np.save('seeds_used_48.npy', seedsused) 
-    np.save('losses_48.npy', losses)
-    np.save('losses_48.npy', losses_val)
+    np.save('seeds_used_49.npy', seedsused) 
+    np.save('losses_49.npy', losses)
+    np.save('losses_49.npy', losses_val)
     seedsused[i-1,0],model=train_models(int(seedsused[i-2,0]))
-    path = "Neural_SDE_48_"+str(i-1)+".pth"
+    path = "Neural_SDE_49_"+str(i-1)+".pth"
     torch.save(model.state_dict(), path)  
 
 
